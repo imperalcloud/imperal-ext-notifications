@@ -5,19 +5,20 @@ import os
 import sys
 from types import SimpleNamespace
 
-# Make the ext modules importable (they use bare `import app`, `from app import …`)
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-# Make `conftest` importable by name from test modules (`from conftest import …`)
-# even though tests/ is a package (tests/__init__.py) under pytest's prepend mode.
-sys.path.insert(0, os.path.dirname(__file__))
+import pytest
+
+# Make the ext modules importable (they use bare `import app`, `from app import …`).
+# MUST run before any test module does `import app` / `import handlers` / `import panels`.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def make_ctx(imperal_id: str = "imp_u_TEST"):
-    """Minimal ctx stand-in: only ctx.user.imperal_id is used by app.py/handlers.py."""
-    user = SimpleNamespace(imperal_id=imperal_id)
-    return SimpleNamespace(user=user)
-
-
-class Empty:
-    """Stand-in for params when the real EmptyParams model isn't imported yet."""
-    pass
+@pytest.fixture
+def make_ctx():
+    """Factory fixture: minimal ctx stand-in — only ctx.user.imperal_id is used
+    by app.py/handlers.py. Auto-discovered by pytest (no cross-module import),
+    so it is portable regardless of pytest rootdir / import-mode / how the
+    validation host invokes pytest."""
+    def _make(imperal_id: str = "imp_u_TEST"):
+        user = SimpleNamespace(imperal_id=imperal_id)
+        return SimpleNamespace(user=user)
+    return _make

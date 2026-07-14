@@ -8,6 +8,7 @@
   "icon": "icon.svg",
   "actions_explicit": true,
   "system": true,
+  "hidden_in_sidebar": true,
   "capabilities": [],
   "tools": [
     {
@@ -438,5 +439,15 @@
       "interval_sec": 60
     }
   },
-  "panels": []
+  "panels": [
+    {
+      "panel_id": "preferences",
+      "slot": "left",
+      "title": "Notification preferences",
+      "tree": {},
+      "icon": "Bell",
+      "refresh": "manual",
+      "center_overlay": false
+    }
+  ]
 }

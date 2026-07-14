@@ -25,6 +25,13 @@ ext = Extension(
     actions_explicit=True,
     system=True,  # Imperal-owned platform app — always accessible, no explicit install.
 )
+# hidden_in_sidebar: True is set by hand directly in imperal.json (federal
+# I-EXT-MANIFEST-HIDDEN-SIDEBAR-SYSTEM-ONLY) — the SDK Extension ctor does not
+# expose this flag and `imperal build` does not carry it through the
+# marketplace-fields merge, so it must be re-added after every `imperal build`.
+# Chat tools/skeleton/lifecycle are unaffected; only the sidebar tile is
+# suppressed (kernel's publish_hidden_in_sidebar_apps scan, honoured only
+# when system=True — see imperal-ext-web-search/app.py for the same pattern).
 
 chat = ChatExtension(
     ext,

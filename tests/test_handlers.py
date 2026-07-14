@@ -11,7 +11,10 @@ import respx
 
 import app as app_mod
 import handlers as h
-from conftest import make_ctx
+
+# make_ctx is a pytest fixture (see tests/conftest.py) — auto-injected by name
+# into any test function below that declares it as a parameter. No cross-module
+# import needed, so collection is portable regardless of pytest rootdir.
 
 GW = app_mod.AUTH_GW
 UID = "imp_u_TEST"
@@ -39,7 +42,7 @@ def _mock_reads(settings=None, extensions=None, surfaces=None):
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_get_preferences_returns_matrix_catalog_and_connected():
+async def test_get_preferences_returns_matrix_catalog_and_connected(make_ctx):
     _mock_reads()
 
     res = await h.fn_get_preferences(make_ctx(), h.EmptyParams())
@@ -54,7 +57,7 @@ async def test_get_preferences_returns_matrix_catalog_and_connected():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_get_preferences_reports_telegram_connected_when_surface_linked():
+async def test_get_preferences_reports_telegram_connected_when_surface_linked(make_ctx):
     _mock_reads(surfaces=SURFACES_WITH_TELEGRAM)
 
     res = await h.fn_get_preferences(make_ctx(), h.EmptyParams())
@@ -65,7 +68,7 @@ async def test_get_preferences_reports_telegram_connected_when_surface_linked():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_get_preferences_uses_ctx_user_id_only_never_a_param():
+async def test_get_preferences_uses_ctx_user_id_only_never_a_param(make_ctx):
     """No user_id can be smuggled in — the handler reads ctx.user.imperal_id and
     calls the gateway for THAT id, regardless of anything in params."""
     other_uid = "imp_u_OTHER"
@@ -84,7 +87,7 @@ async def test_get_preferences_uses_ctx_user_id_only_never_a_param():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_app_id_channels_patches_the_full_dict():
+async def test_set_preferences_app_id_channels_patches_the_full_dict(make_ctx):
     _mock_reads()
     saved = {"enabled": True, "default": ["bell"], "apps": {"mail": ["email"]}}
     patch_route = respx.patch(SETTINGS_URL).mock(
@@ -104,7 +107,7 @@ async def test_set_preferences_app_id_channels_patches_the_full_dict():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_empty_channels_mutes_the_app():
+async def test_set_preferences_empty_channels_mutes_the_app(make_ctx):
     _mock_reads()
     saved = {"enabled": True, "default": ["bell"], "apps": {"mail": []}}
     patch_route = respx.patch(SETTINGS_URL).mock(
@@ -121,7 +124,7 @@ async def test_set_preferences_empty_channels_mutes_the_app():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_unknown_app_id_errors_and_lists_known_ids():
+async def test_set_preferences_unknown_app_id_errors_and_lists_known_ids(make_ctx):
     _mock_reads()
     # No PATCH route registered — an unknown app_id must be rejected before any write.
     params = h.SetPreferencesParams(app_id="not-a-real-app", channels=["bell"])
@@ -136,7 +139,7 @@ async def test_set_preferences_unknown_app_id_errors_and_lists_known_ids():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_gateway_422_surfaces_as_error():
+async def test_set_preferences_gateway_422_surfaces_as_error(make_ctx):
     _mock_reads()
     respx.patch(SETTINGS_URL).mock(
         return_value=httpx.Response(422, json={"detail": "invalid channel 'sms'"}))
@@ -151,7 +154,7 @@ async def test_set_preferences_gateway_422_surfaces_as_error():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_telegram_not_linked_is_a_fact_not_a_block():
+async def test_set_preferences_telegram_not_linked_is_a_fact_not_a_block(make_ctx):
     _mock_reads(surfaces=SURFACES_NO_TELEGRAM)
     saved = {"enabled": True, "default": ["bell", "telegram"], "apps": {}}
     respx.patch(SETTINGS_URL).mock(
@@ -166,7 +169,7 @@ async def test_set_preferences_telegram_not_linked_is_a_fact_not_a_block():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_telegram_linked_no_warning_fact():
+async def test_set_preferences_telegram_linked_no_warning_fact(make_ctx):
     _mock_reads(surfaces=SURFACES_WITH_TELEGRAM)
     saved = {"enabled": True, "default": ["bell", "telegram"], "apps": {}}
     respx.patch(SETTINGS_URL).mock(
@@ -181,7 +184,7 @@ async def test_set_preferences_telegram_linked_no_warning_fact():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_app_id_without_channels_errors():
+async def test_set_preferences_app_id_without_channels_errors(make_ctx):
     _mock_reads()
     params = h.SetPreferencesParams(app_id="mail")
     res = await h.fn_set_preferences(make_ctx(), params)
@@ -192,7 +195,7 @@ async def test_set_preferences_app_id_without_channels_errors():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_nothing_to_change_errors():
+async def test_set_preferences_nothing_to_change_errors(make_ctx):
     _mock_reads()
     params = h.SetPreferencesParams()
     res = await h.fn_set_preferences(make_ctx(), params)
@@ -203,7 +206,7 @@ async def test_set_preferences_nothing_to_change_errors():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_global_switch_only():
+async def test_set_preferences_global_switch_only(make_ctx):
     _mock_reads()
     saved = {"enabled": False, "default": ["bell"], "apps": {}}
     patch_route = respx.patch(SETTINGS_URL).mock(
@@ -222,7 +225,7 @@ async def test_set_preferences_global_switch_only():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_get_preferences_gateway_unreachable_error_has_no_internal_url():
+async def test_get_preferences_gateway_unreachable_error_has_no_internal_url(make_ctx):
     respx.get(SETTINGS_URL).mock(side_effect=httpx.ConnectError("Connection refused"))
 
     res = await h.fn_get_preferences(make_ctx(), h.EmptyParams())
@@ -236,7 +239,7 @@ async def test_get_preferences_gateway_unreachable_error_has_no_internal_url():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_gateway_unreachable_error_has_no_internal_url():
+async def test_set_preferences_gateway_unreachable_error_has_no_internal_url(make_ctx):
     _mock_reads()
     respx.patch(SETTINGS_URL).mock(side_effect=httpx.ConnectError("Connection refused"))
 

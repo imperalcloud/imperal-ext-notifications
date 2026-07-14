@@ -44,6 +44,19 @@ async def _load_state(uid: str) -> tuple[dict, list[dict], list[str]]:
     data_model=NotificationPreferences,
 )
 async def fn_get_preferences(ctx, params: EmptyParams) -> ActionResult:
+    """Show the acting user's notification routing matrix.
+
+    No params — always reads the caller's own settings (``ctx.user.imperal_id``).
+
+    Returns FACTS the narrator needs to explain the current setup in one
+    call: the global on/off switch (``enabled``), the default channel row
+    used by apps without their own override (``default``), any per-app
+    overrides (``apps``, empty list = that app is muted), which channels are
+    actually connected and can receive deliveries right now
+    (``connected_channels`` — bell/email are always connected, telegram only
+    once linked), and the user's installed apps for context
+    (``apps_catalog``: ``[{app_id, name}]``).
+    """
     try:
         uid = _user_id(ctx)
         prefs, catalog, connected = await _load_state(uid)
@@ -67,6 +80,24 @@ async def fn_get_preferences(ctx, params: EmptyParams) -> ActionResult:
     data_model=NotificationPreferences,
 )
 async def fn_set_preferences(ctx, params: SetPreferencesParams) -> ActionResult:
+    """Change ONE part of the acting user's notification routing matrix.
+
+    Exactly one of the following per call (mixing is allowed if the caller
+    genuinely wants more than one field changed in the same write, but the
+    common case is one intent per call):
+    - ``enabled``: flip the global notifications switch on/off.
+    - ``default_channels``: replace the default row — the channels used by
+      apps that have no override of their own (subset of bell/telegram/email).
+    - ``app_id`` + ``channels``: set one app's own channel row; ``channels=[]``
+      mutes that app specifically (it stops following the default row).
+
+    Always writes for ``ctx.user.imperal_id`` — never a caller-supplied user.
+    Returns the same FACTS shape as get_preferences (post-write state) plus
+    ``changed`` (the delta actually applied) and, when relevant,
+    ``changed["telegram_linked"] = False`` if the save routed something to
+    telegram while the user hasn't linked it yet (saved regardless — this is
+    a FACT for the narrator, not a hard error).
+    """
     try:
         uid = _user_id(ctx)
         prefs, catalog, connected = await _load_state(uid)
