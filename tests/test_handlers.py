@@ -1,27 +1,26 @@
 """Tests for notifications get_preferences / set_preferences.
 
-Gateway is mocked with respx (no real network). Every test drives the real
-handler functions in handlers.py against app.AUTH_GW.
+Gateway is mocked with the gw_mock fixture (httpx.MockTransport under the
+hood, see tests/conftest.py) — no real network, no respx. Every test drives
+the real handler functions in handlers.py against app.AUTH_GW.
 """
 import json
 
 import httpx
 import pytest
-import respx
 
-import app as app_mod
 import handlers as h
 
-# make_ctx is a pytest fixture (see tests/conftest.py) — auto-injected by name
-# into any test function below that declares it as a parameter. No cross-module
-# import needed, so collection is portable regardless of pytest rootdir.
+# make_ctx / gw_mock are pytest fixtures (see tests/conftest.py) — auto-injected
+# by name into any test function below that declares them as parameters. No
+# cross-module import needed, so collection is portable regardless of pytest
+# rootdir.
 
-GW = app_mod.AUTH_GW
 UID = "imp_u_TEST"
 
-SETTINGS_URL = f"{GW}/v1/internal/users/{UID}/settings"
-EXTENSIONS_URL = f"{GW}/v1/users/{UID}/extensions"
-SURFACES_URL = f"{GW}/v1/internal/surfaces/{UID}"
+SETTINGS_PATH = f"/v1/internal/users/{UID}/settings"
+EXTENSIONS_PATH = f"/v1/users/{UID}/extensions"
+SURFACES_PATH = f"/v1/internal/surfaces/{UID}"
 
 DEFAULT_SETTINGS = {"settings": {"notifications": {"enabled": True, "default": ["bell"], "apps": {}}}}
 DEFAULT_EXTENSIONS = {"extensions": [
@@ -32,18 +31,17 @@ SURFACES_NO_TELEGRAM = {"surfaces": ["panel", "email"]}
 SURFACES_WITH_TELEGRAM = {"surfaces": ["panel", "email", "telegram"]}
 
 
-def _mock_reads(settings=None, extensions=None, surfaces=None):
-    respx.get(SETTINGS_URL).mock(return_value=httpx.Response(200, json=settings or DEFAULT_SETTINGS))
-    respx.get(EXTENSIONS_URL).mock(return_value=httpx.Response(200, json=extensions or DEFAULT_EXTENSIONS))
-    respx.get(SURFACES_URL).mock(return_value=httpx.Response(200, json=surfaces or SURFACES_NO_TELEGRAM))
+def _mock_reads(gw_mock, settings=None, extensions=None, surfaces=None):
+    gw_mock.get(SETTINGS_PATH, json=settings or DEFAULT_SETTINGS)
+    gw_mock.get(EXTENSIONS_PATH, json=extensions or DEFAULT_EXTENSIONS)
+    gw_mock.get(SURFACES_PATH, json=surfaces or SURFACES_NO_TELEGRAM)
 
 
 # ─── get_preferences ──────────────────────────────────────────────────── #
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_get_preferences_returns_matrix_catalog_and_connected(make_ctx):
-    _mock_reads()
+async def test_get_preferences_returns_matrix_catalog_and_connected(make_ctx, gw_mock):
+    _mock_reads(gw_mock)
 
     res = await h.fn_get_preferences(make_ctx(), h.EmptyParams())
 
@@ -55,10 +53,9 @@ async def test_get_preferences_returns_matrix_catalog_and_connected(make_ctx):
     assert {c["app_id"] for c in res.data.apps_catalog} == {"mail", "sharelock-v2"}
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_get_preferences_reports_telegram_connected_when_surface_linked(make_ctx):
-    _mock_reads(surfaces=SURFACES_WITH_TELEGRAM)
+async def test_get_preferences_reports_telegram_connected_when_surface_linked(make_ctx, gw_mock):
+    _mock_reads(gw_mock, surfaces=SURFACES_WITH_TELEGRAM)
 
     res = await h.fn_get_preferences(make_ctx(), h.EmptyParams())
 
@@ -66,18 +63,14 @@ async def test_get_preferences_reports_telegram_connected_when_surface_linked(ma
     assert res.data.connected_channels == ["bell", "email", "telegram"]
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_get_preferences_uses_ctx_user_id_only_never_a_param(make_ctx):
+async def test_get_preferences_uses_ctx_user_id_only_never_a_param(make_ctx, gw_mock):
     """No user_id can be smuggled in — the handler reads ctx.user.imperal_id and
     calls the gateway for THAT id, regardless of anything in params."""
     other_uid = "imp_u_OTHER"
-    respx.get(f"{GW}/v1/internal/users/{other_uid}/settings").mock(
-        return_value=httpx.Response(200, json=DEFAULT_SETTINGS))
-    respx.get(f"{GW}/v1/users/{other_uid}/extensions").mock(
-        return_value=httpx.Response(200, json=DEFAULT_EXTENSIONS))
-    respx.get(f"{GW}/v1/internal/surfaces/{other_uid}").mock(
-        return_value=httpx.Response(200, json=SURFACES_NO_TELEGRAM))
+    gw_mock.get(f"/v1/internal/users/{other_uid}/settings", json=DEFAULT_SETTINGS)
+    gw_mock.get(f"/v1/users/{other_uid}/extensions", json=DEFAULT_EXTENSIONS)
+    gw_mock.get(f"/v1/internal/surfaces/{other_uid}", json=SURFACES_NO_TELEGRAM)
 
     res = await h.fn_get_preferences(make_ctx(imperal_id=other_uid), h.EmptyParams())
     assert res.status == "success"
@@ -85,47 +78,42 @@ async def test_get_preferences_uses_ctx_user_id_only_never_a_param(make_ctx):
 
 # ─── set_preferences ──────────────────────────────────────────────────── #
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_app_id_channels_patches_the_full_dict(make_ctx):
-    _mock_reads()
+async def test_set_preferences_app_id_channels_patches_the_full_dict(make_ctx, gw_mock):
+    _mock_reads(gw_mock)
     saved = {"enabled": True, "default": ["bell"], "apps": {"mail": ["email"]}}
-    patch_route = respx.patch(SETTINGS_URL).mock(
-        return_value=httpx.Response(200, json={"settings": {"notifications": saved}}))
+    gw_mock.patch(SETTINGS_PATH, json={"settings": {"notifications": saved}})
 
     params = h.SetPreferencesParams(app_id="mail", channels=["email"])
     res = await h.fn_set_preferences(make_ctx(), params)
 
     assert res.status == "success"
-    assert patch_route.called
-    body = json.loads(patch_route.calls.last.request.content)
+    assert gw_mock.was_called("PATCH", SETTINGS_PATH)
+    body = json.loads(gw_mock.last_request("PATCH", SETTINGS_PATH).content)
     # Full dict, not a partial patch: enabled + default + apps all present.
     assert body == {"notifications": {"enabled": True, "default": ["bell"], "apps": {"mail": ["email"]}}}
     assert res.data.apps == {"mail": ["email"]}
     assert res.data.changed == {"mail": ["email"]}
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_empty_channels_mutes_the_app(make_ctx):
-    _mock_reads()
+async def test_set_preferences_empty_channels_mutes_the_app(make_ctx, gw_mock):
+    _mock_reads(gw_mock)
     saved = {"enabled": True, "default": ["bell"], "apps": {"mail": []}}
-    patch_route = respx.patch(SETTINGS_URL).mock(
-        return_value=httpx.Response(200, json={"settings": {"notifications": saved}}))
+    gw_mock.patch(SETTINGS_PATH, json={"settings": {"notifications": saved}})
 
     params = h.SetPreferencesParams(app_id="mail", channels=[])
     res = await h.fn_set_preferences(make_ctx(), params)
 
     assert res.status == "success"
-    body = json.loads(patch_route.calls.last.request.content)
+    body = json.loads(gw_mock.last_request("PATCH", SETTINGS_PATH).content)
     assert body["notifications"]["apps"]["mail"] == []
     assert res.data.apps == {"mail": []}
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_unknown_app_id_errors_and_lists_known_ids(make_ctx):
-    _mock_reads()
+async def test_set_preferences_unknown_app_id_errors_and_lists_known_ids(make_ctx, gw_mock):
+    _mock_reads(gw_mock)
     # No PATCH route registered — an unknown app_id must be rejected before any write.
     params = h.SetPreferencesParams(app_id="not-a-real-app", channels=["bell"])
     res = await h.fn_set_preferences(make_ctx(), params)
@@ -137,12 +125,10 @@ async def test_set_preferences_unknown_app_id_errors_and_lists_known_ids(make_ct
     assert "system" in res.error
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_gateway_422_surfaces_as_error(make_ctx):
-    _mock_reads()
-    respx.patch(SETTINGS_URL).mock(
-        return_value=httpx.Response(422, json={"detail": "invalid channel 'sms'"}))
+async def test_set_preferences_gateway_422_surfaces_as_error(make_ctx, gw_mock):
+    _mock_reads(gw_mock)
+    gw_mock.patch(SETTINGS_PATH, json={"detail": "invalid channel 'sms'"}, status=422)
 
     params = h.SetPreferencesParams(app_id="mail", channels=["sms"])
     res = await h.fn_set_preferences(make_ctx(), params)
@@ -152,13 +138,11 @@ async def test_set_preferences_gateway_422_surfaces_as_error(make_ctx):
     assert "invalid channel" in res.error
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_telegram_not_linked_is_a_fact_not_a_block(make_ctx):
-    _mock_reads(surfaces=SURFACES_NO_TELEGRAM)
+async def test_set_preferences_telegram_not_linked_is_a_fact_not_a_block(make_ctx, gw_mock):
+    _mock_reads(gw_mock, surfaces=SURFACES_NO_TELEGRAM)
     saved = {"enabled": True, "default": ["bell", "telegram"], "apps": {}}
-    respx.patch(SETTINGS_URL).mock(
-        return_value=httpx.Response(200, json={"settings": {"notifications": saved}}))
+    gw_mock.patch(SETTINGS_PATH, json={"settings": {"notifications": saved}})
 
     params = h.SetPreferencesParams(default_channels=["bell", "telegram"])
     res = await h.fn_set_preferences(make_ctx(), params)
@@ -167,13 +151,11 @@ async def test_set_preferences_telegram_not_linked_is_a_fact_not_a_block(make_ct
     assert res.data.changed["telegram_linked"] is False
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_telegram_linked_no_warning_fact(make_ctx):
-    _mock_reads(surfaces=SURFACES_WITH_TELEGRAM)
+async def test_set_preferences_telegram_linked_no_warning_fact(make_ctx, gw_mock):
+    _mock_reads(gw_mock, surfaces=SURFACES_WITH_TELEGRAM)
     saved = {"enabled": True, "default": ["bell", "telegram"], "apps": {}}
-    respx.patch(SETTINGS_URL).mock(
-        return_value=httpx.Response(200, json={"settings": {"notifications": saved}}))
+    gw_mock.patch(SETTINGS_PATH, json={"settings": {"notifications": saved}})
 
     params = h.SetPreferencesParams(default_channels=["bell", "telegram"])
     res = await h.fn_set_preferences(make_ctx(), params)
@@ -182,10 +164,9 @@ async def test_set_preferences_telegram_linked_no_warning_fact(make_ctx):
     assert "telegram_linked" not in res.data.changed
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_app_id_without_channels_errors(make_ctx):
-    _mock_reads()
+async def test_set_preferences_app_id_without_channels_errors(make_ctx, gw_mock):
+    _mock_reads(gw_mock)
     params = h.SetPreferencesParams(app_id="mail")
     res = await h.fn_set_preferences(make_ctx(), params)
 
@@ -193,10 +174,9 @@ async def test_set_preferences_app_id_without_channels_errors(make_ctx):
     assert "channels is required" in res.error
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_nothing_to_change_errors(make_ctx):
-    _mock_reads()
+async def test_set_preferences_nothing_to_change_errors(make_ctx, gw_mock):
+    _mock_reads(gw_mock)
     params = h.SetPreferencesParams()
     res = await h.fn_set_preferences(make_ctx(), params)
 
@@ -204,29 +184,26 @@ async def test_set_preferences_nothing_to_change_errors(make_ctx):
     assert "nothing to change" in res.error
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_global_switch_only(make_ctx):
-    _mock_reads()
+async def test_set_preferences_global_switch_only(make_ctx, gw_mock):
+    _mock_reads(gw_mock)
     saved = {"enabled": False, "default": ["bell"], "apps": {}}
-    patch_route = respx.patch(SETTINGS_URL).mock(
-        return_value=httpx.Response(200, json={"settings": {"notifications": saved}}))
+    gw_mock.patch(SETTINGS_PATH, json={"settings": {"notifications": saved}})
 
     params = h.SetPreferencesParams(enabled=False)
     res = await h.fn_set_preferences(make_ctx(), params)
 
     assert res.status == "success"
-    body = json.loads(patch_route.calls.last.request.content)
+    body = json.loads(gw_mock.last_request("PATCH", SETTINGS_PATH).content)
     assert body["notifications"]["enabled"] is False
     assert res.data.changed == {"enabled": False}
 
 
 # ─── Gateway unreachable: never leak the internal URL/IP into the error ─ #
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_get_preferences_gateway_unreachable_error_has_no_internal_url(make_ctx):
-    respx.get(SETTINGS_URL).mock(side_effect=httpx.ConnectError("Connection refused"))
+async def test_get_preferences_gateway_unreachable_error_has_no_internal_url(make_ctx, gw_mock):
+    gw_mock.error("GET", SETTINGS_PATH, httpx.ConnectError("boom"))
 
     res = await h.fn_get_preferences(make_ctx(), h.EmptyParams())
 
@@ -237,11 +214,10 @@ async def test_get_preferences_gateway_unreachable_error_has_no_internal_url(mak
     assert "gateway" in res.error.lower()
 
 
-@respx.mock
 @pytest.mark.asyncio
-async def test_set_preferences_gateway_unreachable_error_has_no_internal_url(make_ctx):
-    _mock_reads()
-    respx.patch(SETTINGS_URL).mock(side_effect=httpx.ConnectError("Connection refused"))
+async def test_set_preferences_gateway_unreachable_error_has_no_internal_url(make_ctx, gw_mock):
+    _mock_reads(gw_mock)
+    gw_mock.error("PATCH", SETTINGS_PATH, httpx.ConnectError("boom"))
 
     params = h.SetPreferencesParams(app_id="mail", channels=["email"])
     res = await h.fn_set_preferences(make_ctx(), params)
