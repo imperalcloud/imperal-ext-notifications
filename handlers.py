@@ -1,9 +1,10 @@
 """Notifications · Chat function handlers — FACTS out, narrator phrases (ICNLI)."""
 from __future__ import annotations
 
+import httpx
 from pydantic import BaseModel, Field
 
-from app import ActionResult, chat, gw_get, gw_patch, _user_id
+from app import ActionResult, chat, gw_get, gw_patch, _safe_err, _user_id
 from models import NotificationPreferences
 
 CHANNELS = ("bell", "telegram", "email")
@@ -53,8 +54,10 @@ async def fn_get_preferences(ctx, params: EmptyParams) -> ActionResult:
             summary=f"notifications enabled={prefs.get('enabled', True)}, "
                     f"default={prefs.get('default', ['bell'])}, "
                     f"{len(prefs.get('apps', {}))} app override(s)")
+    except httpx.HTTPError:
+        return ActionResult.error("Failed to reach the platform gateway — try again shortly")
     except Exception as e:
-        return ActionResult.error(f"Failed to load notification preferences: {e}")
+        return ActionResult.error(f"Failed to load notification preferences: {_safe_err(e)}")
 
 
 @chat.function(
@@ -103,8 +106,10 @@ async def fn_set_preferences(ctx, params: SetPreferencesParams) -> ActionResult:
                 apps=saved.get("apps", {}), connected_channels=connected,
                 apps_catalog=catalog, changed=changed),
             summary=f"notification preferences updated: {changed}")
+    except httpx.HTTPError:
+        return ActionResult.error("Preferences not saved: platform gateway unreachable — try again shortly")
     except Exception as e:
-        return ActionResult.error(f"Failed to update notification preferences: {e}")
+        return ActionResult.error(f"Failed to update notification preferences: {_safe_err(e)}")
 
 
 __all__ = ["fn_get_preferences", "fn_set_preferences"]

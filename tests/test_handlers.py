@@ -218,6 +218,38 @@ async def test_set_preferences_global_switch_only():
     assert res.data.changed == {"enabled": False}
 
 
+# ─── Gateway unreachable: never leak the internal URL/IP into the error ─ #
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_preferences_gateway_unreachable_error_has_no_internal_url():
+    respx.get(SETTINGS_URL).mock(side_effect=httpx.ConnectError("Connection refused"))
+
+    res = await h.fn_get_preferences(make_ctx(), h.EmptyParams())
+
+    assert res.status == "error"
+    assert "104.224" not in res.error
+    assert "http://" not in res.error
+    assert "https://" not in res.error
+    assert "gateway" in res.error.lower()
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_set_preferences_gateway_unreachable_error_has_no_internal_url():
+    _mock_reads()
+    respx.patch(SETTINGS_URL).mock(side_effect=httpx.ConnectError("Connection refused"))
+
+    params = h.SetPreferencesParams(app_id="mail", channels=["email"])
+    res = await h.fn_set_preferences(make_ctx(), params)
+
+    assert res.status == "error"
+    assert "104.224" not in res.error
+    assert "http://" not in res.error
+    assert "https://" not in res.error
+    assert "gateway" in res.error.lower()
+
+
 # ─── Security: no user_id in the write-surface ───────────────────────── #
 
 def test_params_models_have_no_user_id_field():

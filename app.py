@@ -80,3 +80,12 @@ async def gw_patch(path: str, body: dict) -> tuple[dict | None, str | None]:
 @ext.health_check
 async def health(ctx) -> dict:
     return {"status": "ok", "version": ext.version}
+
+
+def _safe_err(e: Exception) -> str:
+    """Never let an internal gateway URL/IP leak into a chat-facing error.
+
+    httpx exceptions (and anything else that happens to embed a URL) get
+    collapsed to a generic label; everything else is passed through as-is."""
+    s = str(e)
+    return "internal error" if "http" in s.lower() and "://" in s else s
