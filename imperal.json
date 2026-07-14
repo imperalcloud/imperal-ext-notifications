@@ -1,0 +1,442 @@
+{
+  "manifest_schema_version": 3,
+  "sdk_version": "5.9.4",
+  "app_id": "notifications",
+  "version": "1.0.0",
+  "name": "Notifications",
+  "description": "Notification preferences — choose where each app's notifications go (panel bell, Telegram, email), mute apps, or turn notifications off entirely.",
+  "icon": "icon.svg",
+  "actions_explicit": true,
+  "system": true,
+  "capabilities": [],
+  "tools": [
+    {
+      "name": "get_preferences",
+      "description": "Show the notification routing matrix: global switch, default row, per-app channels, connected channels.",
+      "action_type": "read",
+      "chain_callable": true,
+      "effects": [],
+      "id_projection": "",
+      "params_schema": {
+        "description": "No parameters needed.",
+        "properties": {},
+        "title": "EmptyParams",
+        "type": "object"
+      },
+      "return_schema": {
+        "description": "The user's notification routing matrix + surrounding FACTS.\n\nenabled/default/apps mirror user_settings.notifications verbatim;\nconnected_channels/apps_catalog let the narrator explain what is possible\nwithout a second tool call.",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "default": "",
+            "title": "Kind",
+            "type": "string"
+          },
+          "subtitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Subtitle"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Description"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Status"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Url"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Enabled"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Default"
+          },
+          "apps": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Apps"
+          },
+          "connected_channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Connected Channels"
+          },
+          "apps_catalog": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Apps Catalog"
+          },
+          "changed": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Changed"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "NotificationPreferences",
+        "type": "object",
+        "x-sdl": "entity"
+      },
+      "event": "",
+      "background": false,
+      "long_running": false,
+      "scopes": [],
+      "owner_chat_tool": "tool_notifications_chat"
+    },
+    {
+      "name": "set_preferences",
+      "description": "Change notification routing: global on/off, the default row, or one app's channels ([] = mute).",
+      "action_type": "write",
+      "chain_callable": true,
+      "effects": [],
+      "id_projection": "",
+      "params_schema": {
+        "description": "Exactly ONE of: enabled (global switch) | default_channels (default row)\n| app_id+channels (one app's row; empty channels = mute that app).",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Global notifications switch",
+            "title": "Enabled"
+          },
+          "default_channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Default row for apps without their own setting (bell/telegram/email)",
+            "title": "Default Channels"
+          },
+          "app_id": {
+            "default": "",
+            "description": "App to change (e.g. mail, sharelock-v2, automations, system)",
+            "title": "App Id",
+            "type": "string"
+          },
+          "channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Channels for app_id (subset of bell/telegram/email); [] mutes the app",
+            "title": "Channels"
+          }
+        },
+        "title": "SetPreferencesParams",
+        "type": "object"
+      },
+      "return_schema": {
+        "description": "The user's notification routing matrix + surrounding FACTS.\n\nenabled/default/apps mirror user_settings.notifications verbatim;\nconnected_channels/apps_catalog let the narrator explain what is possible\nwithout a second tool call.",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "default": "",
+            "title": "Kind",
+            "type": "string"
+          },
+          "subtitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Subtitle"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Description"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Status"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Url"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Enabled"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Default"
+          },
+          "apps": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Apps"
+          },
+          "connected_channels": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Connected Channels"
+          },
+          "apps_catalog": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Apps Catalog"
+          },
+          "changed": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Changed"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "NotificationPreferences",
+        "type": "object",
+        "x-sdl": "entity"
+      },
+      "event": "",
+      "background": false,
+      "long_running": false,
+      "scopes": [],
+      "owner_chat_tool": "tool_notifications_chat"
+    }
+  ],
+  "signals": [],
+  "schedules": [],
+  "required_scopes": [],
+  "icon_size_bytes": 411,
+  "lifecycle": {
+    "health_check": {
+      "interval_sec": 60
+    }
+  },
+  "panels": []
+}

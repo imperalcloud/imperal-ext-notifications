@@ -1,0 +1,110 @@
+"""Notifications · Chat function handlers — FACTS out, narrator phrases (ICNLI)."""
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+from app import ActionResult, chat, gw_get, gw_patch, _user_id
+from models import NotificationPreferences
+
+CHANNELS = ("bell", "telegram", "email")
+
+
+class EmptyParams(BaseModel):
+    """No parameters needed."""
+    pass
+
+
+class SetPreferencesParams(BaseModel):
+    """Exactly ONE of: enabled (global switch) | default_channels (default row)
+    | app_id+channels (one app's row; empty channels = mute that app)."""
+    enabled: bool | None = Field(default=None, description="Global notifications switch")
+    default_channels: list[str] | None = Field(
+        default=None, description="Default row for apps without their own setting (bell/telegram/email)")
+    app_id: str = Field(default="", description="App to change (e.g. mail, sharelock-v2, automations, system)")
+    channels: list[str] | None = Field(
+        default=None, description="Channels for app_id (subset of bell/telegram/email); [] mutes the app")
+
+
+async def _load_state(uid: str) -> tuple[dict, list[dict], list[str]]:
+    settings = (await gw_get(f"/v1/internal/users/{uid}/settings")).get("settings", {})
+    prefs = settings.get("notifications") or {"enabled": True, "default": ["bell"], "apps": {}}
+    exts = (await gw_get(f"/v1/users/{uid}/extensions")).get("extensions", [])
+    catalog = [{"app_id": e["app_id"], "name": e.get("name") or e["app_id"]}
+               for e in exts if e.get("has_access") is not False and e.get("enabled") is not False]
+    surfaces = (await gw_get(f"/v1/internal/surfaces/{uid}")).get("surfaces", [])
+    connected = ["bell", "email"] + (["telegram"] if "telegram" in surfaces else [])
+    return prefs, catalog, connected
+
+
+@chat.function(
+    "get_preferences",
+    action_type="read",
+    description="Show the notification routing matrix: global switch, default row, per-app channels, connected channels.",
+    data_model=NotificationPreferences,
+)
+async def fn_get_preferences(ctx, params: EmptyParams) -> ActionResult:
+    try:
+        uid = _user_id(ctx)
+        prefs, catalog, connected = await _load_state(uid)
+        return ActionResult.success(
+            data=NotificationPreferences(
+                enabled=prefs.get("enabled", True), default=prefs.get("default", ["bell"]),
+                apps=prefs.get("apps", {}), connected_channels=connected, apps_catalog=catalog),
+            summary=f"notifications enabled={prefs.get('enabled', True)}, "
+                    f"default={prefs.get('default', ['bell'])}, "
+                    f"{len(prefs.get('apps', {}))} app override(s)")
+    except Exception as e:
+        return ActionResult.error(f"Failed to load notification preferences: {e}")
+
+
+@chat.function(
+    "set_preferences",
+    action_type="write",
+    description="Change notification routing: global on/off, the default row, or one app's channels ([] = mute).",
+    data_model=NotificationPreferences,
+)
+async def fn_set_preferences(ctx, params: SetPreferencesParams) -> ActionResult:
+    try:
+        uid = _user_id(ctx)
+        prefs, catalog, connected = await _load_state(uid)
+        changed: dict = {}
+        if params.enabled is not None:
+            prefs["enabled"] = params.enabled
+            changed["enabled"] = params.enabled
+        if params.default_channels is not None:
+            prefs["default"] = params.default_channels
+            changed["default"] = params.default_channels
+        if params.app_id:
+            if params.channels is None:
+                return ActionResult.error("channels is required when app_id is given ([] mutes the app)")
+            known = {c["app_id"] for c in catalog} | {"system"}
+            if params.app_id not in known:
+                return ActionResult.error(
+                    f"unknown app '{params.app_id}'; known: {sorted(known)}")
+            prefs.setdefault("apps", {})[params.app_id] = params.channels
+            changed[params.app_id] = params.channels
+        if not changed:
+            return ActionResult.error("nothing to change: give enabled, default_channels, or app_id+channels")
+        # Full-dict write — the gateway stores the subtree wholesale (replace_paths),
+        # and validates channels/app ids authoritatively (422 -> surfaced below).
+        body = {"notifications": {"enabled": prefs.get("enabled", True),
+                                  "default": prefs.get("default", ["bell"]),
+                                  "apps": prefs.get("apps", {})}}
+        res, err = await gw_patch(f"/v1/internal/users/{uid}/settings", body)
+        if err:
+            return ActionResult.error(f"Preferences not saved: {err}")
+        saved = (res.get("settings") or {}).get("notifications", body["notifications"])
+        if "telegram" not in connected and any(
+                "telegram" in v for v in ([saved.get("default", [])] + list(saved.get("apps", {}).values()))):
+            changed["telegram_linked"] = False  # FACT: saved, but delivery needs linking
+        return ActionResult.success(
+            data=NotificationPreferences(
+                enabled=saved.get("enabled", True), default=saved.get("default", ["bell"]),
+                apps=saved.get("apps", {}), connected_channels=connected,
+                apps_catalog=catalog, changed=changed),
+            summary=f"notification preferences updated: {changed}")
+    except Exception as e:
+        return ActionResult.error(f"Failed to update notification preferences: {e}")
+
+
+__all__ = ["fn_get_preferences", "fn_set_preferences"]
