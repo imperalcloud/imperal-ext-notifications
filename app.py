@@ -15,7 +15,8 @@ AUTH_GW = os.getenv("IMPERAL_GATEWAY_URL", "http://104.224.88.155:8085")
 AUTH_SERVICE_TOKEN = os.getenv("AUTH_SERVICE_TOKEN", "")
 
 ext = Extension(
-    "notifications-control", version="1.0.0", capabilities=[],
+    "notifications-control", version="1.0.0",
+    capabilities=["notifications:read", "notifications:write"],
     display_name="Notifications",
     description=(
         "Notification preferences — choose where each app's notifications go "

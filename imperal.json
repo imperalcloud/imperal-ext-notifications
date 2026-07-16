@@ -9,7 +9,10 @@
   "actions_explicit": true,
   "system": true,
   "hidden_in_sidebar": true,
-  "capabilities": [],
+  "capabilities": [
+    "notifications:read",
+    "notifications:write"
+  ],
   "tools": [
     {
       "name": "get_preferences",
@@ -191,7 +194,9 @@
       "event": "",
       "background": false,
       "long_running": false,
-      "scopes": [],
+      "scopes": [
+        "notifications:read"
+      ],
       "owner_chat_tool": "tool_notifications_chat"
     },
     {
@@ -426,13 +431,18 @@
       "event": "",
       "background": false,
       "long_running": false,
-      "scopes": [],
+      "scopes": [
+        "notifications:write"
+      ],
       "owner_chat_tool": "tool_notifications_chat"
     }
   ],
   "signals": [],
   "schedules": [],
-  "required_scopes": [],
+  "required_scopes": [
+    "notifications:read",
+    "notifications:write"
+  ],
   "icon_size_bytes": 411,
   "lifecycle": {
     "health_check": {
