@@ -1,7 +1,7 @@
 {
   "manifest_schema_version": 3,
   "sdk_version": "5.9.4",
-  "app_id": "notifications",
+  "app_id": "notifications-control",
   "version": "1.0.0",
   "name": "Notifications",
   "description": "Notification preferences — choose where each app's notifications go (panel bell, Telegram, email), mute apps, or turn notifications off entirely.",
